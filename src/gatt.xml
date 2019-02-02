@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- GATT profile definitions for the custom "bletalk" profile. -->
+<!-- See https://www.silabs.com/documents/login/user-guides/ug118-bluegecko-bt-profile-toolkit.pdf for syntax info -->
+<gatt header="gatt_db.h" name="bletalk" out="gatt_db.c" prefix="gattdb_">
+  <!-- BLETalk protocol:
+       Allows low-latency transfer of audio data over BLE.
+       Similar to most other voice-over-BLE protocols, but there is no standard
+       so far so might as well use our own UUID.
+       
+       Each packet will contain arbitrary amount of audio data, sampled at
+       12000 Hz and encoded using 4-bit ADPCM coding, such as in VOX format.
+       The packet begins with two bytes that contain the current ADPCM step
+       size (6 bits) and waveform value (10 bits), to keep decoder in sync even
+       if some packets are lost.
+       
+       Client can send audio to the server using "Attribute write without
+       response" operation. Server will send audio to the client using
+       "Attribute notify" operation. Both of these are non-acknowledged,
+       best-effort transfers.
+       --> 
+  
+  <service advertise="true" name="BLETalk" uuid="65d6314a-61fe-41a8-92b2-4dd1b6000d6a">
+       <characteristic id="audio" name="audio" uuid="4f9e0296-06f5-4808-adbb-36f719890301">
+            <properties write_no_response="true" notify="true" />
+            <value type="user" variable_length="true" length="256" />
+       </characteristic>
+  </service>
+</gatt>
+

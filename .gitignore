@@ -1,2 +1,5 @@
 build
-
+gatt_db.c
+gatt_db.h
+.kdev4
+*.kdev4

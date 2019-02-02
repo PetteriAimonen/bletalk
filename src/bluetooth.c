@@ -1,6 +1,8 @@
 #include "bluetooth.h"
 #include "hal-config.h"
+#include "gatt_db.h"
 
+#include <em_core.h>
 #include <bg_types.h>
 #include <native_gecko.h>
 #include <infrastructure.h>
@@ -17,7 +19,7 @@ static const gecko_configuration_t g_gecko_config = {
   .bluetooth.heap = g_bluetooth_heap,
   .bluetooth.heap_size = sizeof(g_bluetooth_heap),
   .bluetooth.sleep_clock_accuracy = 100,
-  .gattdb = NULL,
+  .gattdb = &bg_gattdb_data,
   .ota.flags = 0,
   .ota.device_name_len = 11,
   .ota.device_name_ptr = "BLETALK_OTA",
@@ -30,25 +32,46 @@ void bluetooth_init()
     gecko_init(&g_gecko_config);
 }
 
-void bluetooth_poll()
+void bluetooth_poll(int max_sleep_ms)
 {
-    static uint8_t adv_data[24] = {
-		  23, 0x21, /* UUID: e2bbea4e-539a-40d3-bcd8-eeabddc779a6 */
-		  0xa6, 0x79, 0xc7, 0xdd, 0xab, 0xee, 0xd8, 0xbc, 0xd3, 0x40, 0x9a, 0x53, 0x4e, 0xea, 0xbb, 0xe2,
-		  'T', 'E', 'S', 'T',
-		  1, 2, 3, 4
-    };
-
     struct gecko_cmd_packet* evt;
-    evt = gecko_wait_event();
+    evt = gecko_peek_event();
     
-    switch (BGLIB_MSG_ID(evt->header))
+    if (!evt)
     {
-        case gecko_evt_system_boot_id:
-            gecko_cmd_le_gap_bt5_set_adv_data(0, 0, sizeof(adv_data), adv_data);
-            gecko_cmd_le_gap_set_advertise_timing(0, 160, 160, 0, 0);
-            gecko_cmd_le_gap_start_advertising(0, le_gap_user_data, le_gap_non_connectable);
-            break;
+        CORE_DECLARE_IRQ_STATE;
+        CORE_ENTER_ATOMIC();
+        uint32_t gecko_max_sleep = gecko_can_sleep_ms();
+        if (gecko_max_sleep > max_sleep_ms)
+            gecko_max_sleep = max_sleep_ms;
+        gecko_sleep_for_ms(gecko_max_sleep);
+        CORE_EXIT_ATOMIC();
+        
+        evt = gecko_peek_event();
+    }
+    
+    if (evt)
+    {
+        uint32_t id = BGLIB_MSG_ID(evt->header);
+        
+        if (id == gecko_evt_system_boot_id)
+        {
+            gecko_cmd_le_gap_set_advertise_timing(0, 320, 640, 0, 0);
+            gecko_cmd_le_gap_start_advertising(0, le_gap_general_discoverable, le_gap_connectable_scannable);
+        }
+        else if (id == gecko_evt_gatt_server_user_write_request_id)
+        {
+            if (evt->data.evt_gatt_server_user_write_request.characteristic == gattdb_audio)
+            {
+                // For now this just returns the same data back
+                gecko_cmd_gatt_server_send_characteristic_notification(
+                  evt->data.evt_gatt_server_user_write_request.connection,
+                  gattdb_audio,
+                  evt->data.evt_gatt_server_user_write_request.value.len,
+                  evt->data.evt_gatt_server_user_write_request.value.data
+                );
+            }
+        }
     }
 }
 
