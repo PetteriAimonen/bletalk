@@ -1,0 +1,21 @@
+# Design FIR filter for interpolating 8kHz -> 40kHz.
+samplerate = 40000;
+freq_bands = [0, 3200, 3800, 20000] / (samplerate / 2);
+amplitudes = [1.0, 1.0, 0.001, 0.001];
+weights = [1.0, 0.1];
+
+fir = firls(30, freq_bands, amplitudes);
+
+# Round to 16-bit
+fir_16bit = round(fir * 32768);
+fir = fir_16bit / 32768;
+
+freqz(fir, [1], 2048, samplerate);
+
+
+# Separate to 5 separate FIR stages for use in 5x interpolation filter.
+fir_16bit_1 = sprintf('%5d,' ,fir_16bit(5:5:end))
+fir_16bit_2 = sprintf('%5d,' ,fir_16bit(4:5:end))
+fir_16bit_3 = sprintf('%5d,' ,fir_16bit(3:5:end))
+fir_16bit_4 = sprintf('%5d,' ,fir_16bit(2:5:end))
+fir_16bit_5 = sprintf('%5d,' ,fir_16bit(1:5:end))

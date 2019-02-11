@@ -5,10 +5,11 @@ CC      = arm-none-eabi-gcc
 AR		= arm-none-eabi-ar
 OBJCOPY = arm-none-eabi-objcopy
 CFLAGS ?= -O2 -g3 -ggdb -Wall
-CFLAGS += -std=gnu99 -fwrapv
+CFLAGS += -std=gnu99 -fwrapv -fno-strict-aliasing
 CFLAGS += -ffunction-sections
 CFLAGS += -DBGM113A256V2=1 -DHAL_CONFIG=1
 CFLAGS += -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=softfp
+CFLAGS += -D__STACK_SIZE=0x1000
 LFLAGS  = -Wl,--gc-sections
 
 # Path to SiliconLabs Gecko SDK
@@ -43,6 +44,15 @@ LIBS += $(SDKDIR)/protocol/bluetooth/lib/EFR32BG1B/GCC/libpsstore.a
 LIBS += $(SDKDIR)/platform/radio/rail_lib/autogen/librail_release/librail_config_bgm113a256v2_gcc.a
 LIBS += $(SDKDIR)/platform/radio/rail_lib/autogen/librail_release/librail_module_efr32xg1_gcc_release.a
 
+# Libgsm audio compression library
+LIBGSM_CSRC = libgsm/src/add.c libgsm/src/code.c libgsm/src/decode.c libgsm/src/gsm_encode.c \
+	      libgsm/src/gsm_explode.c libgsm/src/gsm_implode.c libgsm/src/long_term.c libgsm/src/lpc.c \
+	      libgsm/src/preprocess.c libgsm/src/rpe.c libgsm/src/short_term.c libgsm/src/table.c
+LIBGSM_OBJS = $(patsubst %.c,build/libgsm/%.o,$(notdir $(LIBGSM_CSRC)))
+LIBGSM_CFLAGS = -DUSE_FLOAT_MUL -DFAST -Wno-comment
+CFLAGS += -Ilibgsm/inc
+LIBS += build/libgsm.a
+
 # Standard system libraries
 SYSLIBS += -lm -lgcc -lc -lnosys
 
@@ -72,6 +82,7 @@ build:
 	mkdir -p build/bgm1
 	mkdir -p build/emlib
 	mkdir -p build/emdrv
+	mkdir -p build/libgsm
 
 start_openocd:
 	pidof openocd || $(OOCD) $(OOCDFLAGS)
@@ -120,4 +131,9 @@ build/bootloader.o: $(SDKDIR)/platform/bootloader/sample-apps/bootloader-uart-bg
 		--set-section-flags *=contents,alloc,load,readonly,data \
 		--gap-fill 0 --pad-to 0x4000 $< $@
 
+# Build rules for libgsm
+build/libgsm/%.o: libgsm/src/%.c
+	$(CC) $(CFLAGS) $(LIBGSM_CFLAGS) -c -o $@ $<
 
+build/libgsm.a: $(LIBGSM_OBJS)
+	$(AR) cr $@ $^

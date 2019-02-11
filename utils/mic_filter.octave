@@ -1,0 +1,65 @@
+
+# CIC filter code from https://www.dsprelated.com/showarticle/163.php
+
+function [vec, H] = CICdec_freqDomainModel(vec, N, M, R, doDecim)
+ flag = isreal(vec);
+
+ % evaluate frequency response (z-domain transfer function)
+ n = numel(vec);
+ zInv = exp(-2i*pi*(0:(n-1))/n);
+ b = ones(1, R * M);
+ H = polyval(b, zInv) .^ N;
+ H = H / H(1);
+
+ % apply frequency response
+ vec = ifft(fft(vec) .* H);
+
+ % decimate
+ if doDecim
+ vec = vec(1:R:end);
+ end
+
+ % don't let FFT roundoff error turn real signal into complex
+ if flag
+ vec = real(vec);
+ end
+end
+
+# Calculate response of the input CIC filter
+imp = [zeros(1,10), 1, zeros(1,2000)];
+cic_response = CICdec_freqDomainModel(imp, 3, 2, 12, true);
+cic_response /= sum(cic_response);
+
+# Design FIR filter for decimating 40 -> 8kHz and compensating for CIC response.
+samplerate = 40000;
+cic_freqresp = freqz(cic_response, [1], samplerate);
+freq_bands = [];
+amplitudes = [];
+weights = [];
+
+for f = 0:100:3200
+    freq_bands(end+1) = f;
+    freq_bands(end+1) = f + 100;
+    amplitudes(end+1) = 1.0 / abs(cic_freqresp(f + 1));
+    amplitudes(end+1) = 1.0 / abs(cic_freqresp(f + 100));
+    weights(end+1) = 1.0;
+end
+
+freq_bands(end+1) = 3800;
+freq_bands(end+1) = samplerate/2;
+amplitudes(end+1) = 0.001;
+amplitudes(end+1) = 0.001;
+weights(end+1) = 0.1;
+
+freq_bands /= (samplerate / 2);
+fir = firls(30, freq_bands, amplitudes);
+
+# Round to 16-bit
+fir_16bit = round(fir * 32768);
+fir = fir_16bit / 32768;
+
+# Compute combined response
+total_response = filter(fir, [1], cic_response);
+freqz(total_response, [1], 2048, samplerate);
+
+fir_16bit_str = sprintf('%5d,' ,fir_16bit)

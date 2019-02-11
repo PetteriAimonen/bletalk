@@ -22,7 +22,9 @@ int main()
         audio_pdm_convert(inbuf, readcount);
 
         int samplecount = readcount / AUDIO_PDM_BYTES_PER_PCM_SAMPLE;
-        const int16_t *pcmbuf = audio_get_readptr(samplecount);
+        int16_t pcmbuf[BLOCKSIZE];
+        audio_read(pcmbuf, samplecount);
+
         if (fwrite(pcmbuf, sizeof(int16_t), samplecount, stdout) != samplecount)
         {
             perror("stdout");

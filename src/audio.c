@@ -1,4 +1,9 @@
 #include "audio.h"
+#include "cortexm4_dsp.h"
+
+#ifdef TESTING
+#include <stdio.h>
+#endif
 
 // Data from bluetooth is received asynchronously and goes through ring
 // buffer to the interrupt handler.
@@ -7,66 +12,72 @@ static int16_t g_audio_ringbuf[AUDIO_RINGBUF_SIZE];
 static unsigned g_audio_ringbuf_writepos = 0;
 static unsigned g_audio_ringbuf_readpos = 0;
 static unsigned g_audio_ringbuf_irqpos = 0;
+static int g_audio_mic_gain = 256;
+static int g_audio_spk_gain = 256;
 
 int audio_max_writecount()
 {
-    if (g_audio_ringbuf_writepos <= g_audio_ringbuf_readpos)
-        return g_audio_ringbuf_readpos - g_audio_ringbuf_writepos;
-    else
-        return AUDIO_RINGBUF_SIZE - g_audio_ringbuf_writepos;
+    return (AUDIO_RINGBUF_SIZE + g_audio_ringbuf_readpos - g_audio_ringbuf_writepos) % AUDIO_RINGBUF_SIZE;
 }
 
-int16_t *audio_get_writeptr(int sample_count)
+void audio_write(const int16_t *samples, int sample_count)
 {
-    int16_t *result = g_audio_ringbuf + g_audio_ringbuf_writepos;
-    g_audio_ringbuf_writepos = (g_audio_ringbuf_writepos + sample_count) % AUDIO_RINGBUF_SIZE;
-    return result;
+    for (int i = 0; i < sample_count; i++)
+    {
+        g_audio_ringbuf[g_audio_ringbuf_writepos % AUDIO_RINGBUF_SIZE] = samples[i];
+        g_audio_ringbuf_writepos++;
+    }
 }
 
 int audio_max_readcount()
 {
-    if (g_audio_ringbuf_readpos <= g_audio_ringbuf_irqpos)
-        return g_audio_ringbuf_irqpos - g_audio_ringbuf_readpos;
-    else
-        return AUDIO_RINGBUF_SIZE - g_audio_ringbuf_readpos;
+    return (AUDIO_RINGBUF_SIZE + g_audio_ringbuf_irqpos - g_audio_ringbuf_readpos) % AUDIO_RINGBUF_SIZE;
 }
 
-const int16_t *audio_get_readptr(int sample_count)
+void audio_read(int16_t *samples, int sample_count)
 {
-    const int16_t *result = g_audio_ringbuf + g_audio_ringbuf_readpos;
-    g_audio_ringbuf_readpos = (g_audio_ringbuf_readpos + sample_count) % AUDIO_RINGBUF_SIZE;
-    return result;
+    for (int i = 0; i < sample_count; i++)
+    {
+        samples[i] = g_audio_ringbuf[g_audio_ringbuf_readpos % AUDIO_RINGBUF_SIZE];
+        g_audio_ringbuf_readpos++;
+    }
+}
+
+void audio_set_mic_gain(int gain)
+{
+    g_audio_mic_gain = gain;
+}
+
+void audio_set_spk_gain(int gain)
+{
+    g_audio_spk_gain = gain;
 }
 
 // Signal processing chain:
-// Microphone PDM in at 1.92 MHz
-//           -> /8 decimation by popcount -> 240 kHz
-//           -> /4 decimation by CIC filter with N=3, M=4, R=4 -> 60 kHz
-//           -> Biquad filter lowpass at 4kHz corner freq
-//           -> /5 decimation -> 12 kHz
+// Microphone PDM in at 3.84 MHz
+//           -> /8 decimation by popcount -> 480 kHz
+//           -> /12 decimation by CIC filter with N=3, M=2, R=12 -> 40 kHz
+//           -> FIR filter lowpass at 3.5kHz cutoff
+//           -> /5 decimation -> 8 kHz
 //           -> PCM out to network
 
 #define MIC_CIC_LEVELS 3
-#define MIC_CIC_MEMORY 8
-#define MIC_CIC_RATIO 4
-#define MIC_CIC_GAIN (32*32*32)
+#define MIC_CIC_MEMORY 2
+#define MIC_CIC_RATIO 12
+#define MIC_CIC_GAIN (24*24*24)
+#define MIC_FIR_TAPS 32
 static int g_mic_cic_integrators[MIC_CIC_LEVELS];
 static int g_mic_cic_combs[MIC_CIC_LEVELS][MIC_CIC_MEMORY];
 static unsigned g_mic_cic_memidx = 0;
+static int16_t g_mic_fir_state[MIC_FIR_TAPS];
 
-#define MIC_BIQUAD_SHIFT 14
-#define MIC_BIQUAD_SCALE (1 << MIC_BIQUAD_SHIFT)
-#define MIC_BIQUAD_A0 (int32_t)(0.057983629007272525 * MIC_BIQUAD_SCALE + 0.5)
-#define MIC_BIQUAD_A1 (int32_t)(0.11596725801454505 * MIC_BIQUAD_SCALE + 0.5)
-#define MIC_BIQUAD_A2 (int32_t)(0.057983629007272525 * MIC_BIQUAD_SCALE + 0.5)
-#define MIC_BIQUAD_B1 (int32_t)(-1.4992482796698348 * MIC_BIQUAD_SCALE - 0.5)
-#define MIC_BIQUAD_B2 (int32_t)(0.7311827956989247 * MIC_BIQUAD_SCALE + 0.5)
-#define MIC_BIQUAD_RATIO 5
-static int g_mic_biquad_state[4];
+static const int16_t g_mic_fir_coeffs[MIC_FIR_TAPS + 2] = {
+    548,  687,  624,  337, -125, -651,-1086,-1264,-1054, -395,  677, 2031, 3459, 4717, 5579, 5918, 5579, 4717, 3459,2031,  677, -395,-1054,-1264,-1086, -651, -125,  337,  624,  687,  548
+};
 
 static inline void process_mic_pdm_word(uint32_t pdm_word)
 {
-    // This filter runs at 240 kHz samplerate and processes 4 samples at a time.
+    // This filter runs at 480 kHz samplerate and processes 4 samples at a time.
 
     // Parallel popcount of each byte in the 32-bit word
     pdm_word = pdm_word - ((pdm_word >> 1) & 0x55555555);
@@ -87,36 +98,38 @@ static inline void process_mic_pdm_word(uint32_t pdm_word)
     g_mic_cic_integrators[0] += x0 + x1 + x2 + x3;
 }
 
-static inline void process_mic_biquad()
+static inline void process_mic_comb()
 {
-    // This filter runs at 60 kHz samplerate
+    // This filter runs at 40 kHz samplerate
     int comb_in = g_mic_cic_integrators[2];
     int comb_out;
     for (int i = 0; i < MIC_CIC_LEVELS; i++)
     {
-        comb_out = comb_in - g_mic_cic_combs[i][g_mic_cic_memidx];
-        g_mic_cic_combs[i][g_mic_cic_memidx] = comb_in;
+        comb_out = comb_in - g_mic_cic_combs[i][g_mic_cic_memidx % MIC_CIC_MEMORY];
+        g_mic_cic_combs[i][g_mic_cic_memidx % MIC_CIC_MEMORY] = comb_in;
         comb_in = comb_out;
     }
 
-    g_mic_cic_memidx = (g_mic_cic_memidx + 1) % MIC_CIC_MEMORY;
+    comb_out = (comb_out * g_audio_mic_gain) >> 9;
+    int16_t fir_in = (comb_out > INT16_MAX) ? INT16_MAX : (comb_out < INT16_MIN) ? INT16_MIN : comb_out;
+    g_mic_fir_state[g_mic_cic_memidx % MIC_FIR_TAPS] = fir_in;
 
-    int biquad_in = comb_out >> 2; // comb_out * (4 * MIC_CIC_GAIN / INT16_MAX);
-    int biquad_out = (MIC_BIQUAD_A0 * biquad_in
-                    + MIC_BIQUAD_A1 * g_mic_biquad_state[0]
-                    + MIC_BIQUAD_A2 * g_mic_biquad_state[1]
-                    - MIC_BIQUAD_B1 * g_mic_biquad_state[2]
-                    - MIC_BIQUAD_B2 * g_mic_biquad_state[3]) >> MIC_BIQUAD_SHIFT;
-    g_mic_biquad_state[1] = g_mic_biquad_state[0];
-    g_mic_biquad_state[0] = biquad_in;
-    g_mic_biquad_state[3] = g_mic_biquad_state[2];
-    g_mic_biquad_state[2] = biquad_out;
+    g_mic_cic_memidx++;
 }
 
 static inline void process_mic_pcm()
 {
-    // This filter runs at 12 kHz samplerate
-    int pcm_out = g_mic_biquad_state[2];
+    // This filter runs at 8 kHz samplerate
+
+    int sum = 0;
+    for (int i = 0; i < MIC_FIR_TAPS; i += 2)
+    {
+        uint32_t src = *(uint32_t*)&g_mic_fir_state[i];
+        uint32_t coeff = *(uint32_t*)&g_mic_fir_coeffs[(MIC_FIR_TAPS - g_mic_cic_memidx + i) % MIC_FIR_TAPS];
+        sum = SMLAD(src, coeff, sum);
+    }
+
+    int pcm_out = sum >> 15;
     if (pcm_out < INT16_MIN) pcm_out = INT16_MIN;
     if (pcm_out > INT16_MAX) pcm_out = INT16_MAX;
 
@@ -125,21 +138,28 @@ static inline void process_mic_pcm()
 }
 
 // Signal processing chain:
-// PCM in from network
-//           -> x5 interpolation by CIC filter with N=3, M=1, R=5
-//           -> x4 second-order sigma-delta coding
-//           -> x8 PDM expansion
+// PCM in from network at 8 kHz
+//           -> x5 interpolation by FIR filter -> 40 kHz
+//           -> x12 second-order sigma-delta coding -> 480 kHz
+//           -> x8 PDM expansion -> 3.84 MHz
 //           -> PDM out to speaker
 
-#define SPK_CIC_LEVELS 3
-#define SPK_CIC_RATIO 5
-#define SPK_CIC_GAIN (5*5*5/5)
-static int g_spk_cic_integrators[SPK_CIC_LEVELS];
-static int g_spk_cic_combs[SPK_CIC_LEVELS];
-
-#define SPK_SIGMADELTA_RATIO 5
+#define SPK_FIR_MEMLEN 8
+#define SPK_FIR_RATIO 5
+#define SPK_FIR_TAPS 8
+static int16_t g_spk_fir_state[SPK_FIR_TAPS];
+static unsigned g_spk_fir_memidx;
+static int g_spk_fir_ipolstep;
 static int g_spk_sigmadelta_in;
 static int g_spk_sigmadelta_state[2];
+
+static const int16_t g_spk_fir_coeffs[SPK_FIR_RATIO][SPK_FIR_TAPS + 2] = {
+    { 17, -497, 5596, 1932,-1017,  694},
+    {464,-1113, 4699, 3397,-1261,  701},
+    {701,-1261, 3397, 4699,-1113,  464},
+    {694,-1017, 1932, 5596, -497,   17},
+    {482, -531,  562, 6243,  562, -531,  482},
+};
 
 static inline int saturate_3bit(int x) // Compiles to SSAT instruction
 {
@@ -148,7 +168,7 @@ static inline int saturate_3bit(int x) // Compiles to SSAT instruction
 
 static inline uint32_t process_speaker_pdm_word()
 {
-    // This filter runs at 240 kHz samplerate and generates 4 bytes at a time.
+    // This filter runs at 480 kHz samplerate and generates 4 samples at a time.
 
     // Do four steps of sigma delta modulation with c1 = 0.5, c2 = 1
     int input = g_spk_sigmadelta_in;
@@ -181,44 +201,53 @@ static inline uint32_t process_speaker_pdm_word()
     return out_pdm;
 }
 
-static inline void process_speaker_cic()
+static inline void process_speaker_fir()
 {
-    // This filter runs at 60 kHz samplerate
-    for (int i = 1; i < SPK_CIC_LEVELS; i++)
-    {
-        g_spk_cic_integrators[i] += g_spk_cic_integrators[i-1];
-    }
-    g_spk_sigmadelta_in = g_spk_cic_integrators[SPK_CIC_LEVELS - 1] / SPK_CIC_GAIN;
-}
+    // This filter runs at 40 kHz samplerate
 
-#include <stdio.h>
+    // Do interpolation by FIR filter
+    int sum = 0;
+    const int16_t *coeffs = &g_spk_fir_coeffs[g_spk_fir_ipolstep][0];
+    for (int i = 0; i < SPK_FIR_TAPS; i += 2)
+    {
+        uint32_t src = *(uint32_t*)&g_spk_fir_state[i];
+        uint32_t coeff = *(uint32_t*)&coeffs[(SPK_FIR_TAPS - g_spk_fir_memidx + i) % SPK_FIR_TAPS];
+        sum = SMLAD(src, coeff, sum);
+    }
+
+    g_spk_sigmadelta_in = (((sum * SPK_FIR_RATIO) >> 7) * g_audio_spk_gain) >> 8;
+
+//     fprintf(stderr, "%5d %5d\n", g_spk_fir_state[(g_spk_fir_memidx - 1) % SPK_FIR_MEMLEN], g_spk_sigmadelta_in);
+
+    g_spk_fir_ipolstep++;
+}
 
 static inline void process_speaker_pcm()
 {
-    // This filter runs at 12 kHz samplerate
-    int comb_in = g_audio_ringbuf[g_audio_ringbuf_irqpos];
-    int comb_out;
-    for (int i = 0; i < SPK_CIC_LEVELS; i++)
-    {
-        comb_out = comb_in - g_spk_cic_combs[i];
-        g_spk_cic_combs[i] = comb_in;
-        comb_in = comb_out;
-    }
-    g_spk_cic_integrators[0] += comb_out;
+    // This filter runs at 8 kHz samplerate
+    int pcm_in = g_audio_ringbuf[g_audio_ringbuf_irqpos];
+    g_spk_fir_state[g_spk_fir_memidx % SPK_FIR_MEMLEN] = pcm_in;
+    g_spk_fir_memidx++;
+
+    g_spk_fir_ipolstep = 0;
 }
 
 void audio_pdm_convert(uint8_t* pdm_buf, int size)
 {
     uint32_t *p = (uint32_t*)pdm_buf;
 
-    for (int i = 0; i < size; i += 20)
+    for (int i = 0; i < size; i += AUDIO_PDM_BYTES_PER_PCM_SAMPLE)
     {
         for (int j = 0; j < 5; j++)
         {
             process_mic_pdm_word(*p);
             *p++ = process_speaker_pdm_word();
-            process_mic_biquad();
-            process_speaker_cic();
+            process_mic_pdm_word(*p);
+            *p++ = process_speaker_pdm_word();
+            process_mic_pdm_word(*p);
+            *p++ = process_speaker_pdm_word();
+            process_mic_comb();
+            process_speaker_fir();
         }
 
         process_speaker_pcm();
@@ -234,14 +263,14 @@ void audio_pdm_convert(uint8_t* pdm_buf, int size)
 // LDMA and USART setup and config
 
 // Audio input and output goes through USART1 in pulse density modulation
-// format at 1.92MHz. This is converted in interrupt handler to 12kHz PCM
-// format. Each PCM sample thus corresponds to 160 PDM bits, or 20 bytes.
-// DMA interrupt occurs at 1kHz rate, converting 240 bytes each time.
-#define PDM_BUF_SIZE 240
+// format at 3.84MHz. This is converted in interrupt handler to 8kHz PCM
+// format. Each PCM sample thus corresponds to 960 PDM bits, or 60 bytes.
+// DMA interrupt occurs at 1kHz rate, converting 480 bytes each time.
+#define PDM_BUF_SIZE 480
 static uint8_t g_pdm_buf_1[PDM_BUF_SIZE];
 static uint8_t g_pdm_buf_2[PDM_BUF_SIZE];
 static uint8_t g_pdm_buf_idx = 0;
-unsigned g_pdm_irq_cycles = 0;
+unsigned g_audio_irq_cycles = 0;
 
 static const LDMA_Descriptor_t g_pdm_dma_write_desc[2] = {
     LDMA_DESCRIPTOR_LINKREL_M2P_BYTE(g_pdm_buf_1, &USART1->TXDATA, PDM_BUF_SIZE, 1),
@@ -261,7 +290,7 @@ void audio_init()
     DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
 
     USART_InitSync_TypeDef usart_init = USART_INITSYNC_DEFAULT;
-    usart_init.baudrate = 1920000;
+    usart_init.baudrate = 3840000;
     USART_InitSync(USART1, &usart_init);
 
     GPIO_PinModeSet(gpioPortB, 11, gpioModeInput, 0);
@@ -290,7 +319,7 @@ void LDMA_IRQHandler(void)
         uint8_t *buf = g_pdm_buf_idx ? g_pdm_buf_2 : g_pdm_buf_1;
         g_pdm_buf_idx = !g_pdm_buf_idx;
         audio_pdm_convert(buf, PDM_BUF_SIZE);
-        g_pdm_irq_cycles = DWT->CYCCNT - start;
+        g_audio_irq_cycles = DWT->CYCCNT - start;
     }
 }
 

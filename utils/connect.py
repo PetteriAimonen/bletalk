@@ -43,7 +43,8 @@ class AnyDevice(gatt.Device):
     def characteristic_value_updated(self, characteristic, value):
         self.total_rx += len(value)
         print("%10.3f: %8d %8d %8d B/s" % (time.time() - self.start, self.total_rx, len(value), self.total_rx/(time.time() - self.start)))
-        outfile.write(bytes([len(value)]) + value)
+        #outfile.write(bytes([len(value)]) + value)
+        outfile.write(value)
         outfile.flush()
 
 

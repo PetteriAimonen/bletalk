@@ -34,7 +34,7 @@ device, I'm using stlink-v2 and openocd with `make program` command.
 
 ## License
 
-For all files in this repository, MIT license applies:
+Except where otherwise mentioned in file headers, MIT license applies:
 
 > Copyright 2019 Petteri Aimonen
 > 
