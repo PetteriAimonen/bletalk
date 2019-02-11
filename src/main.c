@@ -8,6 +8,6 @@ int main()
     
     while (1)
     {
-        bluetooth_poll();
+        bluetooth_poll(10);
     }
 }

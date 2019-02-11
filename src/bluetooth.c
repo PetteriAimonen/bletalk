@@ -1,6 +1,8 @@
 #include "bluetooth.h"
 #include "hal-config.h"
 #include "gatt_db.h"
+#include "audio.h"
+#include "adpcm.h"
 
 #include <em_core.h>
 #include <bg_types.h>
@@ -32,6 +34,10 @@ void bluetooth_init()
     gecko_init(&g_gecko_config);
 }
 
+static int g_connection_id = -1;
+static adpcm_state_t g_adpcm_state;
+static uint8_t g_packet_idx;
+
 void bluetooth_poll(int max_sleep_ms)
 {
     struct gecko_cmd_packet* evt;
@@ -39,13 +45,16 @@ void bluetooth_poll(int max_sleep_ms)
     
     if (!evt)
     {
-        CORE_DECLARE_IRQ_STATE;
-        CORE_ENTER_ATOMIC();
-        uint32_t gecko_max_sleep = gecko_can_sleep_ms();
-        if (gecko_max_sleep > max_sleep_ms)
-            gecko_max_sleep = max_sleep_ms;
-        gecko_sleep_for_ms(gecko_max_sleep);
-        CORE_EXIT_ATOMIC();
+        if (g_connection_id < 0)
+        {
+            CORE_DECLARE_IRQ_STATE;
+            CORE_ENTER_ATOMIC();
+            uint32_t gecko_max_sleep = gecko_can_sleep_ms();
+            if (gecko_max_sleep > max_sleep_ms)
+                gecko_max_sleep = max_sleep_ms;
+            gecko_sleep_for_ms(gecko_max_sleep);
+            CORE_EXIT_ATOMIC();
+        }
         
         evt = gecko_peek_event();
     }
@@ -56,6 +65,7 @@ void bluetooth_poll(int max_sleep_ms)
         
         if (id == gecko_evt_system_boot_id)
         {
+            // Initialization tasks
             gecko_cmd_le_gap_set_advertise_timing(0, 320, 640, 0, 0);
             gecko_cmd_le_gap_start_advertising(0, le_gap_general_discoverable, le_gap_connectable_scannable);
         }
@@ -70,6 +80,39 @@ void bluetooth_poll(int max_sleep_ms)
                   evt->data.evt_gatt_server_user_write_request.value.len,
                   evt->data.evt_gatt_server_user_write_request.value.data
                 );
+            }
+        }
+        else if (id == gecko_evt_le_connection_opened_id)
+        {
+            g_connection_id = evt->data.evt_le_connection_opened.connection;
+            audio_init();
+            gecko_cmd_hardware_set_soft_timer(1024, 1, false);
+            gecko_cmd_le_connection_set_parameters(g_connection_id, 6, 10, 0, 100);
+        }
+        else if (id == gecko_evt_le_connection_closed_id)
+        {
+            g_connection_id = -1;
+        }
+        else if (id == gecko_evt_hardware_soft_timer_id)
+        {
+            if (g_connection_id > 0)
+            {
+                uint8_t buffer[255];
+                int hdrlen = 4;
+
+                int samplecount = audio_max_readcount();
+                int maxcount = (sizeof(buffer) - hdrlen) * 2;
+                if (samplecount > maxcount) samplecount = maxcount;
+                samplecount &= ~1;
+                const int16_t *samples = audio_get_readptr(samplecount);
+
+                uint16_t stateword = (g_adpcm_state.stepidx & 0x3F) | ((uint16_t)(g_adpcm_state.value / 16) << 6);
+                buffer[0] = stateword & 0xFF;
+                buffer[1] = stateword >> 8;
+                buffer[2] = g_packet_idx++;
+                buffer[3] = samplecount / 2 + hdrlen;
+                adpcm_encode(&g_adpcm_state, samples, buffer + hdrlen, samplecount);
+                gecko_cmd_gatt_server_send_characteristic_notification(g_connection_id, gattdb_audio, samplecount/2 + hdrlen, buffer);
             }
         }
     }

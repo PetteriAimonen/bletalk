@@ -1,11 +1,15 @@
 import gatt
 from gi.repository import GObject
+import time
 
 from argparse import ArgumentParser
 
+outfile = open("outdata.bin", "wb")
 
 class AnyDevice(gatt.Device):
     c = None
+    total_rx = 0
+    start = 0
 
     def connect_succeeded(self):
         super().connect_succeeded()
@@ -31,12 +35,16 @@ class AnyDevice(gatt.Device):
                 if characteristic.uuid == '4f9e0296-06f5-4808-adbb-36f719890301':
                     self.c = characteristic
                     self.c.enable_notifications()
+                    self.start = time.time()
     
     def characteristic_enable_notifications_succeeded(self, characteristic):
-        self.c.write_value(b"1234")
+        pass
     
     def characteristic_value_updated(self, characteristic, value):
-        print("Received: " + repr(value))
+        self.total_rx += len(value)
+        print("%10.3f: %8d %8d %8d B/s" % (time.time() - self.start, self.total_rx, len(value), self.total_rx/(time.time() - self.start)))
+        outfile.write(bytes([len(value)]) + value)
+        outfile.flush()
 
 
 arg_parser = ArgumentParser(description="GATT Connect Demo")

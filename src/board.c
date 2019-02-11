@@ -48,5 +48,7 @@ void board_init()
         CMU_ClockEnable(cmuClock_PRS, true);
         CMU_ClockEnable(cmuClock_GPIO, true);
         CMU_ClockEnable(cmuClock_USART0, true);
+        CMU_ClockEnable(cmuClock_USART1, true);
+        CMU_ClockEnable(cmuClock_LDMA, true);
     }
 }
