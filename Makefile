@@ -45,7 +45,7 @@ LIBS += $(SDKDIR)/platform/radio/rail_lib/autogen/librail_release/librail_config
 LIBS += $(SDKDIR)/platform/radio/rail_lib/autogen/librail_release/librail_module_efr32xg1_gcc_release.a
 
 # Libgsm audio compression library
-LIBGSM_CSRC = libgsm/src/add.c libgsm/src/code.c libgsm/src/decode.c libgsm/src/gsm_encode.c \
+LIBGSM_CSRC = libgsm/src/add.c libgsm/src/code.c libgsm/src/decode.c libgsm/src/gsm_decode.c libgsm/src/gsm_encode.c \
 	      libgsm/src/gsm_explode.c libgsm/src/gsm_implode.c libgsm/src/long_term.c libgsm/src/lpc.c \
 	      libgsm/src/preprocess.c libgsm/src/rpe.c libgsm/src/short_term.c libgsm/src/table.c
 LIBGSM_OBJS = $(patsubst %.c,build/libgsm/%.o,$(notdir $(LIBGSM_CSRC)))

@@ -4,6 +4,8 @@ import time
 
 from argparse import ArgumentParser
 
+infile = open("speech8kHz.gsm", "rb")
+#infile = open("zeros.gzm", "rb")
 outfile = open("outdata.bin", "wb")
 
 class AnyDevice(gatt.Device):
@@ -36,6 +38,7 @@ class AnyDevice(gatt.Device):
                     self.c = characteristic
                     self.c.enable_notifications()
                     self.start = time.time()
+                    GObject.timeout_add(20, self.send)
     
     def characteristic_enable_notifications_succeeded(self, characteristic):
         pass
@@ -46,6 +49,16 @@ class AnyDevice(gatt.Device):
         #outfile.write(bytes([len(value)]) + value)
         outfile.write(value)
         outfile.flush()
+    
+    def send(self):
+        packet = infile.read(33)
+        if packet:
+            self.c.write_value(packet)
+            print("%10.3f" % (time.time() - self.start))
+        else:
+            infile.seek(0)
+        
+        GObject.timeout_add(20, self.send)
 
 
 arg_parser = ArgumentParser(description="GATT Connect Demo")

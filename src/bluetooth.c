@@ -36,7 +36,9 @@ void bluetooth_init()
 
 static int g_connection_id = -1;
 static struct gsm_state g_gsm_state = GSM_STATE_INIT;
+static struct gsm_state g_gsm_dec_state = GSM_STATE_INIT;
 uint32_t g_gsm_encode_time;
+uint32_t g_gsm_decode_time;
 
 void bluetooth_poll(int max_sleep_ms)
 {
@@ -73,20 +75,21 @@ void bluetooth_poll(int max_sleep_ms)
         {
             if (evt->data.evt_gatt_server_user_write_request.characteristic == gattdb_audio)
             {
-                // For now this just returns the same data back
-                gecko_cmd_gatt_server_send_characteristic_notification(
-                  evt->data.evt_gatt_server_user_write_request.connection,
-                  gattdb_audio,
-                  evt->data.evt_gatt_server_user_write_request.value.len,
-                  evt->data.evt_gatt_server_user_write_request.value.data
-                );
+                if (evt->data.evt_gatt_server_user_write_request.value.len == 33)
+                {
+                    unsigned start = DWT->CYCCNT;
+                    static int16_t samplebuf[160];
+                    gsm_decode(&g_gsm_dec_state, evt->data.evt_gatt_server_user_write_request.value.data, samplebuf);
+                    audio_write(samplebuf, 160);
+                    g_gsm_decode_time = DWT->CYCCNT - start;
+                }
             }
         }
         else if (id == gecko_evt_le_connection_opened_id)
         {
             g_connection_id = evt->data.evt_le_connection_opened.connection;
             audio_init();
-            audio_set_mic_gain(256 * 100);
+//             audio_set_mic_gain(256 * 100);
             gecko_cmd_hardware_set_soft_timer(655, 1, false);
             gecko_cmd_le_connection_set_parameters(g_connection_id, 6, 10, 0, 100);
         }
@@ -96,7 +99,7 @@ void bluetooth_poll(int max_sleep_ms)
         }
         else if (id == gecko_evt_hardware_soft_timer_id)
         {
-            if (g_connection_id > 0)
+            if (false && g_connection_id > 0)
             {
                 static int16_t samplebuf[160];
                 uint8_t packet[33];

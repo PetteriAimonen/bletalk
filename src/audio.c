@@ -215,7 +215,9 @@ static inline void process_speaker_fir()
         sum = SMLAD(src, coeff, sum);
     }
 
-    g_spk_sigmadelta_in = (((sum * SPK_FIR_RATIO) >> 7) * g_audio_spk_gain) >> 8;
+    int fir_out = (((sum * SPK_FIR_RATIO) >> 8) * g_audio_spk_gain) >> 16;
+    fir_out = (fir_out > INT16_MAX) ? INT16_MAX : (fir_out < INT16_MIN) ? INT16_MIN : fir_out;
+    g_spk_sigmadelta_in = fir_out;
 
 //     fprintf(stderr, "%5d %5d\n", g_spk_fir_state[(g_spk_fir_memidx - 1) % SPK_FIR_MEMLEN], g_spk_sigmadelta_in);
 
@@ -259,6 +261,8 @@ void audio_pdm_convert(uint8_t* pdm_buf, int size)
 #include <em_ldma.h>
 #include <em_usart.h>
 #include <em_gpio.h>
+#include <em_acmp.h>
+#include <em_cmu.h>
 
 // LDMA and USART setup and config
 
@@ -289,14 +293,32 @@ void audio_init()
 {
     DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
 
+    CMU_ClockEnable(cmuClock_USART1, true);
+    CMU_ClockEnable(cmuClock_LDMA, true);
+    CMU_ClockEnable(cmuClock_ACMP0, true);
+
     USART_InitSync_TypeDef usart_init = USART_INITSYNC_DEFAULT;
     usart_init.baudrate = 3840000;
     USART_InitSync(USART1, &usart_init);
 
+    ACMP_Init_TypeDef acmp_init = ACMP_INIT_DEFAULT;
+    ACMP_VBConfig_TypeDef input_B = ACMP_VBCONFIG_DEFAULT;
+    acmp_init.fullBias = true;
+    acmp_init.biasProg = 0x20;
+    input_B.input = acmpVBInput1V25;
+    ACMP_Init(ACMP0, &acmp_init);
+    ACMP_GPIOSetup(ACMP0, 16, true, false);
+    ACMP_VBSetup(ACMP0, &input_B);
+    ACMP_ChannelSet(ACMP0, acmpInputVBDIV, acmpInputAPORT1XCH18);
+
     GPIO_PinModeSet(gpioPortB, 11, gpioModeInput, 0);
     GPIO_PinModeSet(gpioPortB, 12, gpioModePushPull, 0);
+    GPIO_PinModeSet(gpioPortC, 10, gpioModePushPull, 0);
+    GPIO_PinModeSet(gpioPortC, 11, gpioModePushPull, 0);
+    GPIO_PinModeSet(gpioPortF, 2, gpioModeInput, 0);
+
     USART1->ROUTELOC0 = 0x05000F05; // RX: PB11, CLK: PB12, TX: PC10
-    USART1->ROUTEPEN = USART_ROUTEPEN_CLKPEN | USART_ROUTEPEN_RXPEN;
+    USART1->ROUTEPEN = USART_ROUTEPEN_CLKPEN | USART_ROUTEPEN_RXPEN | USART_ROUTEPEN_TXPEN;
 
     LDMA_Init_t ldma_init = LDMA_INIT_DEFAULT;
     LDMA_Init(&ldma_init);
