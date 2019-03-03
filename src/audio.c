@@ -56,15 +56,15 @@ void audio_set_spk_gain(int gain)
 // Signal processing chain:
 // Microphone PDM in at 3.84 MHz
 //           -> /8 decimation by popcount -> 480 kHz
-//           -> /12 decimation by CIC filter with N=3, M=2, R=12 -> 40 kHz
+//           -> /12 decimation by CIC filter with N=5, M=2, R=12 -> 40 kHz
 //           -> FIR filter lowpass at 3.5kHz cutoff
 //           -> /5 decimation -> 8 kHz
 //           -> PCM out to network
 
-#define MIC_CIC_LEVELS 3
+#define MIC_CIC_LEVELS 5
 #define MIC_CIC_MEMORY 2
 #define MIC_CIC_RATIO 12
-#define MIC_CIC_GAIN (24*24*24)
+#define MIC_CIC_GAIN (24*24*24*24*24)
 #define MIC_FIR_TAPS 32
 static int g_mic_cic_integrators[MIC_CIC_LEVELS];
 static int g_mic_cic_combs[MIC_CIC_LEVELS][MIC_CIC_MEMORY];
@@ -93,15 +93,17 @@ static inline void process_mic_pdm_word(uint32_t pdm_word)
 
     // Normally we'd first add x0 to [0], then [0] to [1] etc.
     // This code adds everything in one operation.
-    g_mic_cic_integrators[2] += g_mic_cic_integrators[1] * 4 + x0 * 10 + x1 * 6 + x2 * 3 + x3;
-    g_mic_cic_integrators[1] += g_mic_cic_integrators[0] * 4 + x0 *  4 + x1 * 3 + x2 * 2 + x3;
+    g_mic_cic_integrators[4] += g_mic_cic_integrators[3] * 4 + x0 * 35 + x1 * 15 + x2 * 5 + x3;
+    g_mic_cic_integrators[3] += g_mic_cic_integrators[2] * 4 + x0 * 20 + x1 * 10 + x2 * 4 + x3;
+    g_mic_cic_integrators[2] += g_mic_cic_integrators[1] * 4 + x0 * 10 + x1 *  6 + x2 * 3 + x3;
+    g_mic_cic_integrators[1] += g_mic_cic_integrators[0] * 4 + x0 *  4 + x1 *  3 + x2 * 2 + x3;
     g_mic_cic_integrators[0] += x0 + x1 + x2 + x3;
 }
 
 static inline void process_mic_comb()
 {
     // This filter runs at 40 kHz samplerate
-    int comb_in = g_mic_cic_integrators[2];
+    int comb_in = g_mic_cic_integrators[MIC_CIC_LEVELS-1];
     int comb_out;
     for (int i = 0; i < MIC_CIC_LEVELS; i++)
     {
@@ -110,7 +112,7 @@ static inline void process_mic_comb()
         comb_in = comb_out;
     }
 
-    comb_out = (comb_out * g_audio_mic_gain) >> 9;
+    comb_out = ((comb_out >> 8) * g_audio_mic_gain) >> 10;
     int16_t fir_in = (comb_out > INT16_MAX) ? INT16_MAX : (comb_out < INT16_MIN) ? INT16_MIN : comb_out;
     g_mic_fir_state[g_mic_cic_memidx % MIC_FIR_TAPS] = fir_in;
 
@@ -307,7 +309,7 @@ void audio_init()
     acmp_init.biasProg = 0x20;
     input_B.input = acmpVBInput1V25;
     ACMP_Init(ACMP0, &acmp_init);
-    ACMP_GPIOSetup(ACMP0, 16, true, false);
+    ACMP_GPIOSetup(ACMP0, 16, true, true);
     ACMP_VBSetup(ACMP0, &input_B);
     ACMP_ChannelSet(ACMP0, acmpInputVBDIV, acmpInputAPORT1XCH18);
 

@@ -89,7 +89,7 @@ void bluetooth_poll(int max_sleep_ms)
         {
             g_connection_id = evt->data.evt_le_connection_opened.connection;
             audio_init();
-//             audio_set_mic_gain(256 * 100);
+            //audio_set_mic_gain(256 * 100);
             gecko_cmd_hardware_set_soft_timer(655, 1, false);
             gecko_cmd_le_connection_set_parameters(g_connection_id, 6, 10, 0, 100);
         }
