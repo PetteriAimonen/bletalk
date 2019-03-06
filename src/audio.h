@@ -1,23 +1,14 @@
 #include <stdint.h>
 
-// Write to internal ringbuffer
-int audio_max_writecount();
-void audio_write(const int16_t *samples, int sample_count);
+#define AUDIO_SAMPLERATE 8000
+
+// Mix audio to internal ringbuffer
+uint32_t audio_write_pos(); // Oldest position that can still be written
+void audio_write(uint32_t write_pos, const int16_t *samples, int sample_count);
 
 // Read from internal ringbuffer
-int audio_max_readcount();
-void audio_read(int16_t *samples, int sample_count);
+uint32_t audio_read_pos(); // Newest position that can be read
+void audio_read(uint32_t read_pos, int16_t *samples, int sample_count);
 
-// Set speaker/mic gain, 256 = 1x gain
-void audio_set_mic_gain(int gain);
-void audio_set_spk_gain(int gain);
-
-#define AUDIO_PDM_BYTES_PER_PCM_SAMPLE 60
-
-#ifdef TESTING
-void audio_pdm_convert(uint8_t* pdm_buf, int size);
-#endif
-
-#ifndef TESTING
+// Start streaming audio.
 void audio_init();
-#endif

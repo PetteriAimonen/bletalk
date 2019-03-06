@@ -12,6 +12,7 @@ class AnyDevice(gatt.Device):
     c = None
     total_rx = 0
     start = 0
+    count = 0
 
     def connect_succeeded(self):
         super().connect_succeeded()
@@ -45,20 +46,21 @@ class AnyDevice(gatt.Device):
     
     def characteristic_value_updated(self, characteristic, value):
         self.total_rx += len(value)
-        print("%10.3f: %8d %8d %8d B/s" % (time.time() - self.start, self.total_rx, len(value), self.total_rx/(time.time() - self.start)))
+        print("%10.3f: %8d %8d %8d B/s, idx %d" % (time.time() - self.start, self.total_rx, len(value), self.total_rx/(time.time() - self.start), value[0]))
         #outfile.write(bytes([len(value)]) + value)
-        outfile.write(value)
+        outfile.write(value[1:])
         outfile.flush()
     
     def send(self):
+        self.count = (self.count + 1) & 255
+        print("%10.3f: Sending packet %d" % (time.time() - self.start, self.count))
         packet = infile.read(33)
         if packet:
-            self.c.write_value(packet)
-            print("%10.3f" % (time.time() - self.start))
+            self.c.write_value(bytes([self.count]) + packet)
+            GObject.timeout_add(20, self.send)
         else:
-            infile.seek(0)
-        
-        GObject.timeout_add(20, self.send)
+            self.disconnect()
+
 
 
 arg_parser = ArgumentParser(description="GATT Connect Demo")

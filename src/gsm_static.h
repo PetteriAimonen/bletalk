@@ -30,4 +30,4 @@ struct gsm_state {
     unsigned char frame_chain; /*   half-byte to carry forward */
 };
 
-#define GSM_STATE_INIT {{0}, {0}, 0, 0, 0, {0}, {{0}}, 0, 0, 40, {0}, 0, 0, 0, 0, 0, 0}
+#define GSM_STATE_INIT {{0}, {0}, 0, 0, 0, {0}, {{0}}, 0, 0, 40, {0}, 0, 0, 1, 0, 0, 0}

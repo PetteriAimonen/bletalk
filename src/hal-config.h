@@ -16,5 +16,8 @@
 #define HAL_PTI_MODE                                  (HAL_PTI_MODE_UART)
 #define HAL_PTI_BAUD_RATE                             (1600000)
 
+#define TICK_FREQ   32768
+#define MS2TICKS(x) (x * TICK_FREQ / 1000)
+
 #endif
 
