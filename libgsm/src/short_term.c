@@ -262,7 +262,109 @@ static void Fast_Short_term_analysis_filtering P4((S,rp,k_n,s),
 }
 #endif /* ! (defined (USE_FLOAT_MUL) && defined (FAST)) */
 
+#ifdef __arm__
+
 static void Short_term_synthesis_filtering P5((S,rrp,k,wt,sr),
+	struct gsm_state * S,
+	word	* rrp,	/* [0..7]	IN	*/
+	int	k,	/* k_end - k_start	*/
+	word	* wt,	/* [0..k-1]	IN	*/
+	word	* sr	/* [0..k-1]	OUT	*/
+)
+{
+    word  * v = S->v;
+
+    while (k--) {
+        word sri = *wt++;
+
+        asm("mov r2, #16384\n\t"          // For rounding multiplication result
+
+            "ldr r0, [%1, #12]\n\t"       // Load rrp[6] and rrp[7]
+            "ldr r1, [%2, #12]\n\t"       // Load v[6] and v[7]
+            "smlatt r3, r0, r1, r2\n\t"   // r3 = rrp[7] * v[7] + 16384
+            "sub %0, %0, r3, asr #15\n\t" // sri -= r3 >> 15
+            "ssat %0, #16, %0\n\t"        // Saturate sri
+            "sxth r3, r1, ror #16\n\t"    // Sign-extend v[7]
+            "add r3, r2, r3, lsl #15\n\t" // r3 = 16384 + v[7] << 15
+            "smlatb r3, r0, %0, r3\n\t"   // r3 = rrp[7] * sri + 16384 + v[7] << 15
+            "ssat r3, #16, r3,asr #15\n\t"// Saturate r3 >> 15
+            "strh r3, [%2, #16]\n\t"      // Store to v[8]
+            "smlabb r3, r0, r1, r2\n\t"   // r3 = rrp[6] * v[6] + 16384
+            "sub %0, %0, r3, asr #15\n\t" // sri -= r3 >> 15
+            "ssat %0, #16, %0\n\t"        // Saturate sri
+            "sxth r3, r1\n\t"             // Sign-extend v[6]
+            "add r3, r2, r3, lsl #15\n\t" // r3 = 16384 + v[6] << 15
+            "smlabb r3, r0, %0, r3\n\t"   // r3 = rrp[6] * sri + 16384 + v[6] << 15
+            "ssat r3, #16, r3,asr #15\n\t"// Saturate r3 >> 15
+            "strh r3, [%2, #14]\n\t"      // Store to v[7]
+
+            "ldr r0, [%1, #8]\n\t"        // Load rrp[4] and rrp[5]
+            "ldr r1, [%2, #8]\n\t"        // Load v[4] and v[5]
+            "smlatt r3, r0, r1, r2\n\t"   // r3 = rrp[5] * v[5] + 16384
+            "sub %0, %0, r3, asr #15\n\t" // sri -= r3 >> 15
+            "ssat %0, #16, %0\n\t"        // Saturate sri
+            "sxth r3, r1, ror #16\n\t"    // Sign-extend v[5]
+            "add r3, r2, r3, lsl #15\n\t" // r3 = 16384 + v[5] << 15
+            "smlatb r3, r0, %0, r3\n\t"   // r3 = rrp[5] * sri + 16384 + v[5]
+            "ssat r3, #16, r3,asr #15\n\t"// Saturate r3 >> 15
+            "strh r3, [%2, #12]\n\t"      // Store to v[6]
+            "smlabb r3, r0, r1, r2\n\t"   // r3 = rrp[4] * v[4] + 16384
+            "sub %0, %0, r3, asr #15\n\t" // sri -= r3 >> 15
+            "ssat %0, #16, %0\n\t"        // Saturate sri
+            "sxth r3, r1\n\t"             // Sign-extend v[4]
+            "add r3, r2, r3, lsl #15\n\t" // r3 = 16384 + v[4] << 15
+            "smlabb r3, r0, %0, r3\n\t"   // r3 = rrp[4] * sri + 16384 + v[4]
+            "ssat r3, #16, r3,asr #15\n\t"// Saturate r3 >> 15
+            "strh r3, [%2, #10]\n\t"      // Store to v[5]
+
+            "ldr r0, [%1, #4]\n\t"        // Load rrp[2] and rrp[3]
+            "ldr r1, [%2, #4]\n\t"        // Load v[2] and v[3]
+            "smlatt r3, r0, r1, r2\n\t"   // r3 = rrp[3] * v[3] + 16384
+            "sub %0, %0, r3, asr #15\n\t" // sri -= r3 >> 15
+            "ssat %0, #16, %0\n\t"        // Saturate sri
+            "sxth r3, r1, ror #16\n\t"    // Sign-extend v[3]
+            "add r3, r2, r3, lsl #15\n\t" // r3 = 16384 + v[3] << 15
+            "smlatb r3, r0, %0, r3\n\t"   // r3 = rrp[3] * sri + 16384 + v[3]
+            "ssat r3, #16, r3,asr #15\n\t"// Saturate r3 >> 15
+            "strh r3, [%2, #8]\n\t"       // Store to v[4]
+            "smlabb r3, r0, r1, r2\n\t"   // r3 = rrp[2] * v[2] + 16384
+            "sub %0, %0, r3, asr #15\n\t" // sri -= r3 >> 15
+            "ssat %0, #16, %0\n\t"        // Saturate sri
+            "sxth r3, r1\n\t"             // Sign-extend v[2]
+            "add r3, r2, r3, lsl #15\n\t" // r3 = 16384 + v[2] << 15
+            "smlabb r3, r0, %0, r3\n\t"   // r3 = rrp[2] * sri + 16384 + v[2]
+            "ssat r3, #16, r3,asr #15\n\t"// Saturate r3 >> 15
+            "strh r3, [%2, #6]\n\t"       // Store to v[3]
+
+            "ldr r0, [%1, #0]\n\t"        // Load rrp[0] and rrp[1]
+            "ldr r1, [%2, #0]\n\t"        // Load v[0] and v[1]
+            "smlatt r3, r0, r1, r2\n\t"   // r3 = rrp[1] * v[1] + 16384
+            "sub %0, %0, r3, asr #15\n\t" // sri -= r3 >> 15
+            "ssat %0, #16, %0\n\t"        // Saturate sri
+            "sxth r3, r1, ror #16\n\t"    // Sign-extend v[1]
+            "add r3, r2, r3, lsl #15\n\t" // r3 = 16384 + v[1] << 15
+            "smlatb r3, r0, %0, r3\n\t"   // r3 = rrp[7] * sri + 16384 + v[1]
+            "ssat r3, #16, r3,asr #15\n\t"// Saturate r3 >> 15
+            "strh r3, [%2, #4]\n\t"       // Store to v[2]
+            "smlabb r3, r0, r1, r2\n\t"   // r3 = rrp[0] * v[0] + 16384
+            "sub %0, %0, r3, asr #15\n\t" // sri -= r3 >> 15
+            "ssat %0, #16, %0\n\t"        // Saturate sri
+            "sxth r3, r1\n\t"             // Sign-extend v[0]
+            "add r3, r2, r3, lsl #15\n\t" // r3 = 16384 + v[0] << 15
+            "smlabb r3, r0, %0, r3\n\t"   // r3 = rrp[0] * sri + 16384 + v[0]
+            "ssat r3, #16, r3,asr #15\n\t"// Saturate r3 >> 15
+            "strh r3, [%2, #2]\n\t"       // Store to v[1]
+            : "+r"(sri)
+            : "r"(rrp), "r"(v)
+            : "r0", "r1", "r2", "r3", "memory");
+
+        *sr++ = v[0] = sri;
+    }
+}
+
+#else
+
+void Short_term_synthesis_filtering P5((S,rrp,k,wt,sr),
 	struct gsm_state * S,
 	register word	* rrp,	/* [0..7]	IN	*/
 	register int	k,	/* k_end - k_start	*/
@@ -302,6 +404,8 @@ static void Short_term_synthesis_filtering P5((S,rrp,k,wt,sr),
 		*sr++ = v[0] = sri;
 	}
 }
+
+#endif
 
 
 #if defined(FAST) && defined(USE_FLOAT_MUL)

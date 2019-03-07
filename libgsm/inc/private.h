@@ -107,16 +107,16 @@ extern word	gsm_asr  	P((word a, int n));
 	          : (utmp = (ulongword)(a) + (ulongword)(b)) >= MAX_LONGWORD \
 		    ? MAX_LONGWORD : utmp))
 
-/*
- * # define GSM_ADD(a, b)	\
- * 	((ltmp = (longword)(a) + (longword)(b)) >= MAX_WORD \
- * 	? MAX_WORD : ltmp <= MIN_WORD ? MIN_WORD : ltmp)
- */
+
+# define GSM_ADD(a, b)	\
+	((ltmp = (longword)(a) + (longword)(b)) >= MAX_WORD \
+	? MAX_WORD : ltmp <= MIN_WORD ? MIN_WORD : ltmp)
+
 /* Nonportable, but faster: */
 
-#define	GSM_ADD(a, b)	\
+/*#define	GSM_ADD(a, b)	\
 	((ulongword)((ltmp = (longword)(a) + (longword)(b)) - MIN_WORD) > \
-		MAX_WORD - MIN_WORD ? (ltmp > 0 ? MAX_WORD : MIN_WORD) : ltmp)
+		MAX_WORD - MIN_WORD ? (ltmp > 0 ? MAX_WORD : MIN_WORD) : ltmp) */
 
 # define GSM_SUB(a, b)	\
 	((ltmp = (longword)(a) - (longword)(b)) >= MAX_WORD \

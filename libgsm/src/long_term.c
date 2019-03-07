@@ -14,6 +14,172 @@
 #include "gsm.h"
 #include "proto.h"
 
+#ifdef __arm__
+
+static void Calculation_of_the_LTP_parameters P4((d,dp,bc_out,Nc_out),
+	word	* d,		/* [0..39]	IN	*/
+	word	* dp,		/* [-120..-1]	IN	*/
+	word		* bc_out,	/* 		OUT	*/
+	word		* Nc_out	/* 		OUT	*/
+)
+{
+  int  	k, lambda;
+  word		Nc, bc;
+  word		wt[40];
+
+  longword	L_max, L_power;
+  word		R, S, dmax, scal;
+  word	temp;
+
+  /*  Search of the optimum scaling of d[0..39]. */
+  dmax = 0;
+
+  for (k = 0; k <= 39; k++) {
+          temp = d[k];
+          temp = GSM_ABS( temp );
+          if (temp > dmax) dmax = temp;
+  }
+
+  temp = 0;
+  if (dmax == 0) scal = 0;
+  else {
+          assert(dmax > 0);
+          temp = gsm_norm( (longword)dmax << 16 );
+  }
+
+  if (temp > 6) scal = 0;
+  else scal = 6 - temp;
+
+  assert(scal >= 0);
+
+  /*  Initialization of a working array wt */
+
+  for (k = 0; k <= 39; k++) wt[k] = SASR( d[k], scal );
+
+  /* Search for the maximum cross-correlation and coding of the LTP lag */
+  L_max = 0;
+  Nc    = 40;	/* index for the maximum cross-correlation */
+
+  for (lambda = 40; lambda <= 120; lambda++)
+  {
+    uint32_t L_result = 0;
+    uint32_t *wt_p = (uint32_t*)&wt[0];
+    uint32_t *dp_p = (uint32_t*)&dp[-lambda];
+
+    asm("ldm %1!, {r0, r1, r2, r3}\n\t" // Samples 0 to 7
+        "ldr r4, [%2,  #0]\n\t"
+        "smlad %0, r0, r4, %0\n\t"
+        "ldr r4, [%2,  #4]\n\t"
+        "smlad %0, r1, r4, %0\n\t"
+        "ldr r4, [%2,  #8]\n\t"
+        "smlad %0, r2, r4, %0\n\t"
+        "ldr r4, [%2, #12]\n\t"
+        "smlad %0, r3, r4, %0\n\t"
+
+        "ldm %1!, {r0, r1, r2, r3}\n\t" // Samples 8 to 15
+        "ldr r4, [%2, #16]\n\t"
+        "smlad %0, r0, r4, %0\n\t"
+        "ldr r4, [%2, #20]\n\t"
+        "smlad %0, r1, r4, %0\n\t"
+        "ldr r4, [%2, #24]\n\t"
+        "smlad %0, r2, r4, %0\n\t"
+        "ldr r4, [%2, #28]\n\t"
+        "smlad %0, r3, r4, %0\n\t"
+
+        "ldm %1!, {r0, r1, r2, r3}\n\t" // Samples 16 to 23
+        "ldr r4, [%2, #32]\n\t"
+        "smlad %0, r0, r4, %0\n\t"
+        "ldr r4, [%2, #36]\n\t"
+        "smlad %0, r1, r4, %0\n\t"
+        "ldr r4, [%2, #40]\n\t"
+        "smlad %0, r2, r4, %0\n\t"
+        "ldr r4, [%2, #44]\n\t"
+        "smlad %0, r3, r4, %0\n\t"
+
+        "ldm %1!, {r0, r1, r2, r3}\n\t" // Samples 24 to 31
+        "ldr r4, [%2, #48]\n\t"
+        "smlad %0, r0, r4, %0\n\t"
+        "ldr r4, [%2, #52]\n\t"
+        "smlad %0, r1, r4, %0\n\t"
+        "ldr r4, [%2, #56]\n\t"
+        "smlad %0, r2, r4, %0\n\t"
+        "ldr r4, [%2, #60]\n\t"
+        "smlad %0, r3, r4, %0\n\t"
+
+        "ldm %1!, {r0, r1, r2, r3}\n\t" // Samples 32 to 39
+        "ldr r4, [%2, #64]\n\t"
+        "smlad %0, r0, r4, %0\n\t"
+        "ldr r4, [%2, #68]\n\t"
+        "smlad %0, r1, r4, %0\n\t"
+        "ldr r4, [%2, #72]\n\t"
+        "smlad %0, r2, r4, %0\n\t"
+        "ldr r4, [%2, #76]\n\t"
+        "smlad %0, r3, r4, %0\n\t"
+
+        : "+r" (L_result)
+        : "r" (wt_p), "r" (dp_p)
+        : "r0", "r1", "r2", "r3", "r4", "memory");
+
+    if (L_result > L_max)
+    {
+      Nc    = lambda;
+      L_max = L_result;
+    }
+  }
+
+  *Nc_out = Nc;
+
+  L_max <<= 1;
+
+  /*  Rescaling of L_max
+    */
+  assert(scal <= 100 && scal >=  -100);
+  L_max = L_max >> (6 - scal);	/* sub(6, scal) */
+
+  assert( Nc <= 120 && Nc >= 40);
+
+  /*   Compute the power of the reconstructed short term residual
+    *   signal dp[..]
+    */
+  L_power = 0;
+  for (k = 0; k <= 39; k++) {
+
+          register longword L_temp;
+
+          L_temp   = SASR( dp[k - Nc], 3 );
+          L_power += L_temp * L_temp;
+  }
+  L_power <<= 1;	/* from L_MULT */
+
+  /*  Normalization of L_max and L_power
+    */
+
+  if (L_max <= 0)  {
+          *bc_out = 0;
+          return;
+  }
+  if (L_max >= L_power) {
+          *bc_out = 3;
+          return;
+  }
+
+  temp = gsm_norm( L_power );
+
+  R = SASR( L_max   << temp, 16 );
+  S = SASR( L_power << temp, 16 );
+
+  /*  Coding of the LTP gain
+    */
+
+  /*  Table 4.3a must be used to obtain the level DLB[i] for the
+    *  quantization of the LTP gain b to get the coded version bc.
+    */
+  for (bc = 0; bc <= 2; bc++) if (R <= gsm_mult(S, gsm_DLB[bc])) break;
+  *bc_out = bc;
+}
+
+#else
+
 /*
  *  4.2.11 .. 4.2.12 LONG TERM PREDICTOR (LTP) SECTION
  */
@@ -827,7 +993,7 @@ static void Fast_Calculation_of_the_LTP_parameters P4((d,dp,bc_out,Nc_out),
 
 #endif	/* FAST 	 */
 #endif	/* USE_FLOAT_MUL */
-
+#endif /* __arm__ */
 
 /* 4.2.12 */
 

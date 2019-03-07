@@ -49,7 +49,7 @@ LIBGSM_CSRC = libgsm/src/add.c libgsm/src/code.c libgsm/src/decode.c libgsm/src/
 	      libgsm/src/gsm_explode.c libgsm/src/gsm_implode.c libgsm/src/long_term.c libgsm/src/lpc.c \
 	      libgsm/src/preprocess.c libgsm/src/rpe.c libgsm/src/short_term.c libgsm/src/table.c
 LIBGSM_OBJS = $(patsubst %.c,build/libgsm/%.o,$(notdir $(LIBGSM_CSRC)))
-LIBGSM_CFLAGS = -DUSE_FLOAT_MUL -DFAST -DSASR -Wno-comment
+LIBGSM_CFLAGS = -DSASR -Wno-comment
 CFLAGS += -Ilibgsm/inc
 LIBS += build/libgsm.a
 
