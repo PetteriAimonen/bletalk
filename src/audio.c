@@ -11,14 +11,15 @@
 // it is transmitted out.
 #define AUDIO_RINGBUF_SIZE 1024
 #define AUDIO_RINGBUF_MASK (AUDIO_RINGBUF_SIZE-1)
-static int16_t g_audio_ringbuf[AUDIO_RINGBUF_SIZE];
+static int16_t g_audio_output_ringbuf[AUDIO_RINGBUF_SIZE];
+static int16_t g_audio_input_ringbuf[AUDIO_RINGBUF_SIZE];
 static volatile uint32_t g_audio_dmapos;
 
 uint32_t audio_write_pos()
 {
   // Keep track on how many times we've gone around the ringbuffer.
   // This is just so that the indexes don't get reused immediately.
-  uint32_t offset = (LDMA->CH[0].SRC - (uint32_t)g_audio_ringbuf) / sizeof(int16_t);
+  uint32_t offset = (LDMA->CH[0].SRC - (uint32_t)g_audio_output_ringbuf) / sizeof(int16_t);
   uint32_t result = g_audio_dmapos;
   if (offset < (result & AUDIO_RINGBUF_MASK))
     result += AUDIO_RINGBUF_SIZE;
@@ -34,9 +35,9 @@ void audio_write(uint32_t write_pos, const int16_t *samples, int sample_count)
 
   for (int i = 0; i < sample_count; i++)
   {
-    int v = g_audio_ringbuf[(write_pos + i) & AUDIO_RINGBUF_MASK] + samples[i];
+    int v = g_audio_output_ringbuf[(write_pos + i) & AUDIO_RINGBUF_MASK] + samples[i];
     v = (v < INT16_MIN) ? INT16_MIN : (v > INT16_MAX) ? INT16_MAX : v;
-    g_audio_ringbuf[(write_pos + i) & AUDIO_RINGBUF_MASK] = v;
+    g_audio_output_ringbuf[(write_pos + i) & AUDIO_RINGBUF_MASK] = v;
   }
 }
 
@@ -49,8 +50,8 @@ void audio_read(uint32_t read_pos, int16_t* samples, int sample_count)
 {
   for (int i = 0; i < sample_count; i++)
   {
-    samples[i] = g_audio_ringbuf[(read_pos + i) & AUDIO_RINGBUF_MASK];
-    g_audio_ringbuf[(read_pos + i) & AUDIO_RINGBUF_MASK] = 0;
+    samples[i] = g_audio_input_ringbuf[(read_pos + i) & AUDIO_RINGBUF_MASK];
+    g_audio_output_ringbuf[(read_pos + i) & AUDIO_RINGBUF_MASK] = 0;
   }
 }
 
@@ -64,7 +65,7 @@ static const LDMA_Descriptor_t g_audio_dma_write_desc[2] = {
             .ignoreSrec = 0, .srcInc = ldmaCtrlSrcIncOne,
             .size = ldmaCtrlSizeHalf, .dstInc = ldmaCtrlDstIncNone,
             .srcAddrMode = ldmaCtrlSrcAddrModeAbs, .dstAddrMode = ldmaCtrlDstAddrModeAbs,
-            .srcAddr = (uint32_t)g_audio_ringbuf, .dstAddr = (uint32_t)&USART1->TXDOUBLE,
+            .srcAddr = (uint32_t)g_audio_output_ringbuf, .dstAddr = (uint32_t)&USART1->TXDOUBLE,
             .linkMode = ldmaLinkModeRel, .link = 1, .linkAddr = 0}},
 };
 
@@ -76,7 +77,7 @@ static const LDMA_Descriptor_t g_audio_dma_read_desc[2] = {
             .ignoreSrec = 0, .srcInc = ldmaCtrlSrcIncNone,
             .size = ldmaCtrlSizeHalf, .dstInc = ldmaCtrlDstIncOne,
             .srcAddrMode = ldmaCtrlSrcAddrModeAbs, .dstAddrMode = ldmaCtrlDstAddrModeAbs,
-            .srcAddr = (uint32_t)&USART1->RXDOUBLE, .dstAddr = (uint32_t)g_audio_ringbuf,
+            .srcAddr = (uint32_t)&USART1->RXDOUBLE, .dstAddr = (uint32_t)g_audio_input_ringbuf,
             .linkMode = ldmaLinkModeRel, .link = 1, .linkAddr = 0}},
 };
 

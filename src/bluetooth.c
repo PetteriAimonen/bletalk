@@ -316,6 +316,12 @@ void bluetooth_poll(int max_sleep_ms)
     }
     else if (id == gecko_evt_hardware_soft_timer_id)
     {
+      int latency = audio_read_pos() - server.read_pos;
+      if (latency < 0 || latency > 2 * SAMPLES_PER_FRAME)
+      {
+        server.read_pos = audio_read_pos() - SAMPLES_PER_FRAME;
+      }
+
       if (audio_read_pos() - server.read_pos > SAMPLES_PER_FRAME)
       {
         server_send_packets(&server);

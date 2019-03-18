@@ -1,7 +1,7 @@
 #ifndef HAL_CONFIG_H
 #define HAL_CONFIG_H
 
-#define BSP_CLK_LFXO_CTUNE                            (32)
+#include <bgm113a256v2.h>
 
 #define HAL_EXTFLASH_FREQUENCY                        (1000000)
 

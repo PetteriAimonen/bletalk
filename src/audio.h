@@ -1,3 +1,4 @@
+#pragma once
 #include <stdint.h>
 
 #define AUDIO_SAMPLERATE 8000

@@ -50,3 +50,19 @@ void board_init()
         CMU_ClockEnable(cmuClock_USART0, true);
     }
 }
+
+void delay_ms(int ms)
+{
+  uint32_t start = get_ticks();
+  while (get_ticks() - start < MS2TICKS(ms));
+}
+
+uint32_t get_ticks()
+{
+  return RTCC->CNT;
+}
+
+int get_time_ms()
+{
+  return (uint64_t)get_ticks() * 1000 / TICK_FREQ;
+}
