@@ -91,7 +91,9 @@ void audio_init()
     CMU_ClockEnable(cmuClock_ACMP0, true);
 
     USART_InitI2s_TypeDef usart_init = USART_INITI2S_DEFAULT;
+    usart_init.sync.enable = usartEnable;
     usart_init.sync.baudrate = AUDIO_SAMPLERATE * 16;
+    usart_init.sync.clockMode = usartClockMode1;
     usart_init.mono = true;
     USART_InitI2s(USART1, &usart_init);
 

@@ -207,7 +207,7 @@ bool da7212_set_powersave(bool powersave)
     status &= da7212_writereg(DA7212_PLL_INTEGER, 0x14);
     status &= da7212_writereg(DA7212_PLL_CTRL, 0x80);
 
-    // Configure audio interface as 16-bit mono in DSP mode
+    // Configure audio interface as 16-bit mono (only left channel) in DSP mode
     status &= da7212_writereg(DA7212_DAI_CLK_MODE, 0x00);
     status &= da7212_writereg(DA7212_DAI_OFFSET, 0x00);
     status &= da7212_writereg(DA7212_DAI_CTRL, 0xD3);
@@ -220,11 +220,21 @@ bool da7212_set_powersave(bool powersave)
     status &= da7212_writereg(DA7212_MIXOUT_L_SELECT, 0x08);
     status &= da7212_writereg(DA7212_MIXOUT_R_SELECT, 0x08);
 
+    // Configure input mixing from microphone
+    status &= da7212_writereg(DA7212_MICBIAS_CTRL, 0x08);
+    status &= da7212_writereg(DA7212_DIG_ROUTING_DAI, 0x00);
+    status &= da7212_writereg(DA7212_MIXIN_L_CTRL, 0x88);
+    status &= da7212_writereg(DA7212_MIXIN_L_SELECT, 0x02);
+
+    // Input filtering
+    status &= da7212_writereg(DA7212_ADC_FILTERS1, 0x8A);
+
     // Configure default gains
+    status &= da7212_writereg(DA7212_MIC_1_GAIN, 7);
     status &= da7212_writereg(DA7212_LINE_GAIN, 0x30 - 3);
 
     // Configure input mode from MIC1 and output mode into speaker
-    status &= da7212_writereg(DA7212_SYSTEM_MODES_INPUT, 0xC4);
+    status &= da7212_writereg(DA7212_SYSTEM_MODES_INPUT, 0xF4);
     status &= da7212_writereg(DA7212_SYSTEM_MODES_OUTPUT, 0xC9);
 
     return status;

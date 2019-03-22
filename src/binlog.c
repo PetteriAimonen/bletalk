@@ -21,6 +21,8 @@ void binlog_init()
 
 void binlog(const char *format, uint32_t arg1, uint32_t arg2)
 {
+  DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk; // This seems to get reset sometimes..
+
   uint32_t idx = __atomic_fetch_add(&g_binlog_idx, 1, __ATOMIC_RELAXED);
   g_binlog[idx & (BINLOG_LEN-1)] = (binlog_t){DWT->CYCCNT, format, arg1, arg2};
 }

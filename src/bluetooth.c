@@ -118,6 +118,9 @@ void peer_packet_received(peer_state_t *peer, const data_frame_t *data)
   else
   {
     peer->lost_frame_count++;
+    peer->prev_frame.index++;
+
+    binlog("lost frame %d", peer->prev_frame.index, 0);
 
     if (peer->lost_frame_count > 16)
       return;
@@ -151,14 +154,14 @@ void peer_packet_received(peer_state_t *peer, const data_frame_t *data)
     }
     else if (latency < MIN_LATENCY)
     {
-      // Falling behind, add one sample
+      binlog("Falling behind (%d), add one sample", latency, 0);
       audio_write(peer->write_pos, samplebuf, 1);
       audio_write(peer->write_pos, samplebuf, SAMPLES_PER_FRAME);
       peer->write_pos += SAMPLES_PER_FRAME + 1;
     }
     else if (latency > MAX_LATENCY)
     {
-      // Getting ahead, drop one sample
+      binlog("Getting ahead (%d), drop one sample", latency, 0);
       audio_write(peer->write_pos, samplebuf, SAMPLES_PER_FRAME - 1);
       peer->write_pos += SAMPLES_PER_FRAME - 1;
     }
